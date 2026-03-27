@@ -5,9 +5,7 @@ from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, dayofweek, month, count as spark_count, mean, stddev, min as spark_min, max as spark_max
 
-spark = SparkSession.builder.appName("CloudPipeline").getOrCreate()
-
-def cloud_load_transform(path):
+def cloud_load_transform(spark, path):
     df = spark.read.csv(path, header=True, inferSchema=True)
     df = df.withColumn("date", col("date").cast("date"))
     df = df.dropna()

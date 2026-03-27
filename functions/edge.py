@@ -7,9 +7,7 @@ import json
 from datetime import datetime
 from pyspark.sql import SparkSession
 
-spark = SparkSession.builder.appName("EdgePipeline").getOrCreate()
-
-def edge_load_process(image_dir, label_path, size=(320, 240), batch_size=100):
+def edge_load_process(spark, image_dir, label_path, size=(320, 240), batch_size=100):
     df_labels = spark.read.csv(label_path, header=True, inferSchema=True)
     labels = [row["count"] for row in df_labels.collect()]
 
