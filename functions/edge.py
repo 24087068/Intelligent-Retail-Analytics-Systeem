@@ -1,40 +1,34 @@
-import logging
 import os
 import pandas as pd
-from PIL import Image
 import pickle
 import json
 from datetime import datetime
-from pyspark.sql import SparkSession
+from PIL import Image
+import logging
 
-def edge_load_process(spark, image_dir, label_path, size=(320, 240), batch_size=100):
-    df_labels = spark.read.csv(label_path, header=True, inferSchema=True)
-    labels = [row["count"] for row in df_labels.collect()]
+def edge_load_process(image_dir, label_path, size=(320, 240)):
+    """Load and resize images with labels - for local execution"""
+    df_labels = pd.read_csv(label_path)
+    labels = df_labels["count"].tolist()
+    
+    files = sorted([f for f in os.listdir(image_dir) if f.endswith((".jpg", ".png"))])
+    images = []
+    
+    for file in files:
+        path = os.path.join(image_dir, file)
+        img = Image.open(path).resize(size).convert("RGB")
+        images.append(img)
+    
+    print(f"Loaded {len(images)} images and {len(labels)} labels")
+    return images, labels
 
-    files = sorted([f for f in os.listdir(image_dir) if f.endswith(".jpg") or f.endswith(".png")])
-    processed = []
-
-    for i in range(0, len(files), batch_size):
-        batch_files = files[i:i + batch_size]
-        for file in batch_files:
-            path = os.path.join(image_dir, file)
-            img = Image.open(path).resize(size).convert("RGB")
-            processed.append(img)
-
-    print(f"Loaded images: {len(processed)}")
-    print(f"Loaded labels: {len(labels)}")
-    print(f"Number of images: {len(processed)}")
-    print(f"Number of labels: {len(labels)}")
-
-    return processed, labels
-
-def edge_save_monitor(images, labels, save_path, stats_path="../data/monitoring/edge_stats.json"):
+def edge_save_monitor(images, labels, save_path, stats_path=None):
+    """Save processed images and generate stats - for local execution"""
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    os.makedirs(os.path.dirname(stats_path), exist_ok=True)
-
+    
     with open(save_path, "wb") as f:
         pickle.dump(images, f)
-
+    
     stats = {
         "timestamp": datetime.now().isoformat(),
         "image_count": len(images),
@@ -43,15 +37,37 @@ def edge_save_monitor(images, labels, save_path, stats_path="../data/monitoring/
         "label_min": min(labels) if labels else 0,
         "label_max": max(labels) if labels else 0
     }
-
-    with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+    
+    if stats_path:
+        os.makedirs(os.path.dirname(stats_path), exist_ok=True)
+        with open(stats_path, "w") as f:
+            json.dump(stats, f, indent=2)
+    
     print(f"Edge stats: {stats}")
-    print(f"Processed images: {len(images)}")
     return stats
 
-def edge_pipeline():
-    logging.info("Running edge pipeline")
-    processed, labels = edge_load_process("../data/raw/image/frames", "../data/raw/image/labels.csv")
-    edge_save_monitor(processed, labels, "../data/processed/images.pkl")
-    logging.info("Edge pipeline finished")
+
+import os
+import pandas as pd
+from PIL import Image
+
+
+def edge_pipeline(image_dir, label_path, save_path):
+    # Simple check: Only run if labels file exists (Event-based logic)
+    if not os.path.exists(label_path):
+        print("No new data to process.")
+        return None
+
+    df_labels = pd.read_csv(label_path)
+    images = []
+
+    # Process images (Horizontal scaling logic: treating each image as a node)
+    for file in sorted(os.listdir(image_dir)):
+        if file.endswith((".jpg", ".png")):
+            img = Image.open(os.path.join(image_dir, file)).resize((320, 240)).convert("RGB")
+            images.append(img)
+
+    # Save processed data for the YOLO model
+    pd.to_pickle(images, save_path)
+    print(f"Edge Ingestion Complete: {len(images)} images ready.")
+    return images
