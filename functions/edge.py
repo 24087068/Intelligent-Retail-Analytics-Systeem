@@ -71,6 +71,59 @@ def edge_pipeline(image_dir, label_path, output_processed_dir, stats_output):
     print(f"Edge Pipeline completed.")
     return manifest_paths, labels
 
+def validate_ingestion_integrity(image_dir, label_path, valid_count_range=(0, 500)):
+    """
+    Before ingestion data quality gate for the Edge
+    Returns a structured validation report for telemetry / auditing
+    """
+    if not os.path.exists(label_path) or not os.path.exists(image_dir):
+        print("[VALIDATION] Ingestion paths unavailable - skipping integrity scan.")
+        return {"valid": 0, "rejected_null": 0, "rejected_corrupt": 0, "rejected_out_of_bounds": 0}
+    df_labels = pd.read_csv(label_path)
+    lower_bound, upper_bound = valid_count_range
+    # Counters that quantify each rejection reason for the quality report
+    valid_records = 0
+    rejected_null = 0
+    rejected_corrupt = 0
+    rejected_out_of_bounds = 0
+    image_files = sorted(f for f in os.listdir(image_dir) if f.endswith((".jpg", ".png")))
+    for image_name in image_files:
+        # locate the label row and reject missing / NaN counts
+        if "filename" in df_labels.columns:
+            matching_rows = df_labels[df_labels["filename"] == image_name]
+        else:
+            matching_rows = df_labels
+        if matching_rows.empty or pd.isna(matching_rows["count"].values[0]):
+            rejected_null += 1
+            continue
+        raw_count = matching_rows["count"].values[0]
+        # reject non-numeric or implausible values
+        try:
+            numeric_count = int(raw_count)
+        except (ValueError, TypeError):
+            rejected_out_of_bounds += 1
+            continue
+        if not (lower_bound <= numeric_count <= upper_bound):
+            rejected_out_of_bounds += 1
+            continue
+        # verify the file can actually be decoded
+        try:
+            with Image.open(os.path.join(image_dir, image_name)) as candidate_image:
+                candidate_image.verify()
+        except Exception:
+            rejected_corrupt += 1
+            continue
+        valid_records += 1
+    # Validation report
+    validation_report = {
+        "valid": valid_records,
+        "rejected_null": rejected_null,
+        "rejected_corrupt": rejected_corrupt,
+        "rejected_out_of_bounds": rejected_out_of_bounds,
+    }
+    print(f"[VALIDATION] Pre-ingestion integrity report: {validation_report}")
+    return validation_report
+
 
 class EdgeModelTrainer:
     def __init__(self, runs_json_path="../data/monitoring/edge_runs.json"):
