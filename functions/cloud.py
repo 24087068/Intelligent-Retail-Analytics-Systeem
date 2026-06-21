@@ -1,29 +1,80 @@
 import json
-import logging
 import os
 from datetime import datetime
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, dayofweek, month, year, lag, mean, stddev, min as spark_min, max as spark_max, count as spark_count, when
+from pyspark.sql.functions import (
+    col,
+    count as spark_count,
+    dayofweek,
+    expr,
+    lag,
+    max as spark_max,
+    mean,
+    min as spark_min,
+    month,
+    stddev,
+    when,
+    year
+)
 from pyspark.sql.window import Window
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType
+from pyspark.sql.types import StructType, StructField, IntegerType, DateType
 import mlflow
 import mlflow.xgboost
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import math
 
+
+RETAIL_SALES_SCHEMA = StructType([
+    StructField("date", DateType(), True),
+    StructField("store", IntegerType(), True),
+    StructField("item", IntegerType(), True),
+    StructField("sales", IntegerType(), True)
+])
+
+
+def validate_cloud_data_quality(spark, path):
+    """
+    Validates the cloud sales input before feature engineering.
+    Returns a structured audit report for datapipeline quality evidence.
+    """
+    raw_df = spark.read.csv(path, header=True, inferSchema=True)
+    required_columns = ["date", "store", "item", "sales"]
+    missing_columns = [column for column in required_columns if column not in raw_df.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required cloud input columns: {missing_columns}")
+
+    typed_df = raw_df.select(
+        expr("try_cast(date as date)").alias("date"),
+        expr("try_cast(store as int)").alias("store"),
+        expr("try_cast(item as int)").alias("item"),
+        expr("try_cast(sales as int)").alias("sales")
+    )
+    total_rows = typed_df.count()
+    null_rows = typed_df.filter(
+        col("date").isNull()
+        | col("store").isNull()
+        | col("item").isNull()
+        | col("sales").isNull()
+    ).count()
+    negative_sales_rows = typed_df.filter(col("sales") < 0).count()
+    valid_rows = typed_df.dropna().filter(col("sales") >= 0).count()
+    report = {
+        "total_rows": total_rows,
+        "valid_rows": valid_rows,
+        "rejected_null_or_invalid_type": null_rows,
+        "rejected_negative_sales": negative_sales_rows,
+        "required_columns": required_columns
+    }
+    print(f"[VALIDATION] Cloud data quality report: {report}")
+    return report
+
+
 def cloud_load_transform(spark, path, edge_telemetry_path=None, is_pipeline_run=False):
     """
     Loads historical transactional data with a rigorous explicit schema.
     Integrates actual edge analytics outputs to replace random number simulations.
     """
-    schema = StructType([
-        StructField("date", DateType(), True),
-        StructField("store", IntegerType(), True),
-        StructField("item", IntegerType(), True),
-        StructField("sales", IntegerType(), True)
-    ])
-    df = spark.read.csv(path, header=True, schema=schema)
+    df = spark.read.csv(path, header=True, schema=RETAIL_SALES_SCHEMA)
     df = df.dropna().filter(col("sales") >= 0)
 
     # High-impact retail feature engineering
@@ -41,7 +92,9 @@ def cloud_load_transform(spark, path, edge_telemetry_path=None, is_pipeline_run=
         try:
             edge_df = spark.read.csv(edge_telemetry_path, header=True, inferSchema=True)
             # Take average headcount to serve as an aggregate indicator
-            avg_edge_count = int(edge_df.agg(mean("predicted_customer_count")).collect()[0][0] or 25)
+            avg_edge_count = int(
+                edge_df.agg(mean("predicted_customer_count")).collect()[0][0] or 25
+            )
         except Exception:
             avg_edge_count = 25
     else:
@@ -59,14 +112,23 @@ def cloud_load_transform(spark, path, edge_telemetry_path=None, is_pipeline_run=
         print(f"Interactive Exploration Shape: ({df.count()}, {len(df.columns)})")
     return df
 
-def cloud_save_monitor(df, save_path, stats_path=None, dynamic_partitions=None):
+def cloud_save_monitor(
+    df,
+    save_path,
+    stats_path=None,
+    dynamic_partitions=None,
+    partition_columns=("store", "year")
+):
     """Saves optimized Parquet files and generates operational profiles for tracking data drift."""
     if dynamic_partitions:
         df_write = df.coalesce(dynamic_partitions)
     else:
-        df_write = df.coalesce(1)
+        df_write = df
 
-    df_write.write.mode("overwrite").parquet(save_path)
+    writer = df_write.write.mode("overwrite")
+    if partition_columns:
+        writer = writer.partitionBy(*partition_columns)
+    writer.parquet(save_path)
     stats_data = df.select(
         spark_count("*").alias("row_count"),
         mean("sales").alias("sales_mean"),
@@ -85,18 +147,26 @@ def cloud_save_monitor(df, save_path, stats_path=None, dynamic_partitions=None):
         "customer_count_mean": float(stats_data["customer_count_mean"])
     }
     if stats_path:
+        os.makedirs(os.path.dirname(stats_path), exist_ok=True)
         with open(stats_path, "w") as f:
             json.dump(stats, f, indent=2)
     return stats
 
 
 def cloud_pipeline(spark, raw_input, processed_output, stats_output=None):
-    """Production wrapper running large scale ETL feature engineering and registering the top model variant."""
+    """Run ETL feature engineering and register the top model variant."""
+    quality_report = validate_cloud_data_quality(spark, raw_input)
     df_processed = cloud_load_transform(spark, raw_input, is_pipeline_run=True)
     stats = cloud_save_monitor(df_processed, processed_output, stats_output)
-    trainer = CloudModelTrainer(experiment_path="/Users/24087068@student.hhs.nl/brightmart-sales-forecasting")
+    trainer = CloudModelTrainer(
+        experiment_path="/Users/24087068@student.hhs.nl/brightmart-sales-forecasting"
+    )
     trainer.train_and_track(df_processed, target_col="sales")
-    print(f"Cloud Pipeline complete: Extracted features and updated model registry.")
+    print(
+        "Cloud Pipeline complete: validated input, extracted features, "
+        "and updated model registry. "
+        f"Quality report: {quality_report}"
+    )
     return df_processed
 
 
@@ -127,7 +197,10 @@ def verify_pipeline_health(edge_stats_path, cloud_stats_path):
     if os.path.exists(edge_stats_path):
         with open(edge_stats_path, "r") as f:
             edge_metrics = json.load(f)
-        print(f"[MONITORING] Edge Operational Baseline Active: Total Images Processed = {edge_metrics.get('image_count')}")
+        print(
+            "[MONITORING] Edge Operational Baseline Active: "
+            f"Total Images Processed = {edge_metrics.get('image_count')}"
+        )
     else:
         print("[WARNING] Edge telemetry missing. Baseline structural drift suspected.")
 
@@ -136,7 +209,10 @@ def verify_pipeline_health(edge_stats_path, cloud_stats_path):
     if os.path.exists(cloud_stats_path):
         with open(cloud_stats_path, "r") as f:
             cloud_metrics = json.load(f)
-        print(f"[MONITORING] Cloud Asset Profiler Active: Historical Sales Mean = {cloud_metrics.get('sales_mean')}")
+        print(
+            "[MONITORING] Cloud Asset Profiler Active: "
+            f"Historical Sales Mean = {cloud_metrics.get('sales_mean')}"
+        )
     else:
         print("[WARNING] Cloud production telemetry missing. Schema mismatch suspected.")
 
@@ -149,7 +225,15 @@ class CloudModelTrainer:
         data = df_spark.toPandas()
         data = data.sort_values(by="date").drop(columns=["date"])
         # Aligned features array containing Edge telemetry inputs
-        features = ["store", "item", "day_of_week", "month", "year", "sales_lag_7", "in_store_customer_count"]
+        features = [
+            "store",
+            "item",
+            "day_of_week",
+            "month",
+            "year",
+            "sales_lag_7",
+            "in_store_customer_count"
+        ]
         X = data[features]
         y = data[target_col]
         split_idx = int(len(data) * 0.8)
