@@ -147,7 +147,9 @@ def cloud_save_monitor(
         "customer_count_mean": float(stats_data["customer_count_mean"])
     }
     if stats_path:
-        os.makedirs(os.path.dirname(stats_path), exist_ok=True)
+        stats_dir = os.path.dirname(stats_path)
+        if stats_dir:
+            os.makedirs(stats_dir, exist_ok=True)
         with open(stats_path, "w") as f:
             json.dump(stats, f, indent=2)
     return stats
