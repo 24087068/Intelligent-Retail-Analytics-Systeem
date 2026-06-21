@@ -3,12 +3,38 @@ import json
 import pandas as pd
 from datetime import datetime
 import time
-import random
 import torch
 import torchvision
-# from torchvision.models.detection import FasterRCNN_MobileNet_V3_Large_3FPN_Weights
 from torchvision.transforms import functional as F
 from PIL import Image
+
+
+def _extract_label_for_image(df_labels, image_name, image_index, valid_count_range):
+    """Return a validated label for one image, or a rejection reason."""
+    lower_bound, upper_bound = valid_count_range
+    if "filename" in df_labels.columns:
+        matching_rows = df_labels[df_labels["filename"] == image_name]
+        if matching_rows.empty:
+            return None, "rejected_null"
+        raw_count = matching_rows["count"].values[0]
+    else:
+        if image_index >= len(df_labels):
+            return None, "rejected_null"
+        raw_count = df_labels.iloc[image_index]["count"]
+
+    if pd.isna(raw_count):
+        return None, "rejected_null"
+
+    try:
+        numeric_count = int(raw_count)
+    except (ValueError, TypeError):
+        return None, "rejected_out_of_bounds"
+
+    if not (lower_bound <= numeric_count <= upper_bound):
+        return None, "rejected_out_of_bounds"
+
+    return numeric_count, None
+
 
 def edge_load_process(image_dir, label_path, size=(320, 240), output_processed_dir=None):
     """
@@ -28,15 +54,19 @@ def edge_load_process(image_dir, label_path, size=(320, 240), output_processed_d
     for idx, file in enumerate(files):
         src_path = os.path.join(image_dir, file)
         dst_path = os.path.join(target_dir, file)
-        if "filename" in df_labels.columns:
-            matching = df_labels[df_labels["filename"] == file]
-            label = int(matching["count"].values[0]) if not matching.empty else 0
-        else:
-            label = int(df_labels.iloc[idx]["count"]) if idx < len(df_labels) else 0
+        label, rejection_reason = _extract_label_for_image(df_labels, file, idx, (0, 500))
+        if rejection_reason:
+            print(f"Skipping {file}: invalid or missing label ({rejection_reason}).")
+            continue
         if not os.path.exists(dst_path):
             try:
                 with Image.open(src_path) as img:
-                    img.resize(size).convert("RGB").save(dst_path, "JPEG", optimize=True, quality=85)
+                    img.resize(size).convert("RGB").save(
+                        dst_path,
+                        "JPEG",
+                        optimize=True,
+                        quality=85
+                    )
             except Exception as e:
                 print(f"Skipping corrupted data frame file entry {file}: {str(e)}")
                 continue
@@ -63,8 +93,12 @@ def edge_save_monitor(manifest_paths, labels, stats_path=None):
 
 
 def edge_pipeline(image_dir, label_path, output_processed_dir, stats_output):
-    """Production wrapper running data preprocessing followed by automatic local retraining tracking."""
-    manifest_paths, labels = edge_load_process(image_dir, label_path, output_processed_dir=output_processed_dir)
+    """Run preprocessing followed by automatic local retraining tracking."""
+    manifest_paths, labels = edge_load_process(
+        image_dir,
+        label_path,
+        output_processed_dir=output_processed_dir
+    )
     stats = edge_save_monitor(manifest_paths, labels, stats_output)
     trainer = EdgeModelTrainer(runs_json_path="../data/monitoring/edge_runs.json")
     trainer.train_and_track_local(manifest_paths, labels, epochs=25, learning_rate=0.05)
@@ -87,23 +121,17 @@ def validate_ingestion_integrity(image_dir, label_path, valid_count_range=(0, 50
     rejected_corrupt = 0
     rejected_out_of_bounds = 0
     image_files = sorted(f for f in os.listdir(image_dir) if f.endswith((".jpg", ".png")))
-    for image_name in image_files:
-        # locate the label row and reject missing / NaN counts
-        if "filename" in df_labels.columns:
-            matching_rows = df_labels[df_labels["filename"] == image_name]
-        else:
-            matching_rows = df_labels
-        if matching_rows.empty or pd.isna(matching_rows["count"].values[0]):
+    for idx, image_name in enumerate(image_files):
+        _label, rejection_reason = _extract_label_for_image(
+            df_labels,
+            image_name,
+            idx,
+            (lower_bound, upper_bound)
+        )
+        if rejection_reason == "rejected_null":
             rejected_null += 1
             continue
-        raw_count = matching_rows["count"].values[0]
-        # reject non-numeric or implausible values
-        try:
-            numeric_count = int(raw_count)
-        except (ValueError, TypeError):
-            rejected_out_of_bounds += 1
-            continue
-        if not (lower_bound <= numeric_count <= upper_bound):
+        if rejection_reason == "rejected_out_of_bounds":
             rejected_out_of_bounds += 1
             continue
         # verify the file can actually be decoded
@@ -178,7 +206,7 @@ class EdgeModelTrainer:
                         img_tensor = F.to_tensor(img).unsqueeze(0)
                         predictions = self.model(img_tensor)[0]
 
-                        # Filter predictions by person class index and the hyperparameter-driven confidence threshold
+                        # Filter person predictions by confidence threshold.
                         scores = predictions["scores"]
                         labels_pred = predictions["labels"]
 
@@ -247,5 +275,7 @@ class EdgeModelTrainer:
         df_export.to_csv("../data/processed/edge_output_counts.csv", index=False)
 
         print(
-            f"Edge Local Track Complete [{run_id}] -> MAE: {mae:.2f}, Latency: {avg_latency_ms:.2f}ms, Real Size: {model_size_mb}MB")
+            f"Edge Local Track Complete [{run_id}] -> MAE: {mae:.2f}, "
+            f"Latency: {avg_latency_ms:.2f}ms, Real Size: {model_size_mb}MB"
+        )
         return run_data
