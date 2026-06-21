@@ -81,7 +81,6 @@ def cloud_load_transform(spark, path, edge_telemetry_path=None, is_pipeline_run=
     df = df.withColumn("day_of_week", dayofweek(col("date")))
     df = df.withColumn("month", month(col("date")))
     df = df.withColumn("year", year(col("date")))
-
     window_spec = Window.partitionBy("store", "item").orderBy("date")
     df = df.withColumn("sales_lag_7", lag("sales", 7).over(window_spec)).dropna()
 
@@ -107,18 +106,11 @@ def cloud_load_transform(spark, path, edge_telemetry_path=None, is_pipeline_run=
         .otherwise(int(avg_edge_count))
         .cast(IntegerType())
     )
-
     if not is_pipeline_run:
         print(f"Interactive Exploration Shape: ({df.count()}, {len(df.columns)})")
     return df
 
-def cloud_save_monitor(
-    df,
-    save_path,
-    stats_path=None,
-    dynamic_partitions=None,
-    partition_columns=("store", "year")
-):
+def cloud_save_monitor(df, save_path, stats_path=None, dynamic_partitions=None, partition_columns=("store", "year")):
     """Saves optimized Parquet files and generates operational profiles for tracking data drift."""
     if dynamic_partitions:
         df_write = df.coalesce(dynamic_partitions)
@@ -205,7 +197,6 @@ def verify_pipeline_health(edge_stats_path, cloud_stats_path):
         )
     else:
         print("[WARNING] Edge telemetry missing. Baseline structural drift suspected.")
-
     # Layer 2, inspect the Cloud feature-space baseline produced during training.
     print("[MONITORING] Scanning Cloud feature spaces...")
     if os.path.exists(cloud_stats_path):

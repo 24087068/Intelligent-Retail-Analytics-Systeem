@@ -21,18 +21,14 @@ def _extract_label_for_image(df_labels, image_name, image_index, valid_count_ran
         if image_index >= len(df_labels):
             return None, "rejected_null"
         raw_count = df_labels.iloc[image_index]["count"]
-
     if pd.isna(raw_count):
         return None, "rejected_null"
-
     try:
         numeric_count = int(raw_count)
     except (ValueError, TypeError):
         return None, "rejected_out_of_bounds"
-
     if not (lower_bound <= numeric_count <= upper_bound):
         return None, "rejected_out_of_bounds"
-
     return numeric_count, None
 
 
@@ -156,48 +152,34 @@ def validate_ingestion_integrity(image_dir, label_path, valid_count_range=(0, 50
 class EdgeModelTrainer:
     def __init__(self, runs_json_path="../data/monitoring/edge_runs.json"):
         self.runs_json_path = runs_json_path
-
-        # Corrected: changed os.path.makedirs to os.makedirs
         os.makedirs(os.path.dirname(self.runs_json_path), exist_ok=True)
-
-        # Version-agnostic fallback strategy to ensure immediate compilation:
+        # Version-agnostic fallback :
         try:
             # Multi-version weights builder interface
-            self.model = torchvision.models.detection.get_model(
-                "fasterrcnn_mobilenet_v3_large_3fpn",
-                weights="DEFAULT"
-            )
+            self.model = torchvision.models.detection.get_model("fasterrcnn_mobilenet_v3_large_3fpn", weights="DEFAULT")
         except (AttributeError, ValueError):
-            # Fallback to the universally present Faster R-CNN ResNet50 model
-            # if your local environment utilizes an older torchvision release.
+            # Fallback to the universally present Faster R-CNN ResNet50 model if local environment utilizes an older torchvision release.
             self.model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
                 weights="DEFAULT"
             )
-
-        self.model.eval()  # Put in inference mode for validation evaluation
+        self.model.eval()
 
     def train_and_track_local(self, manifest_paths, labels, epochs=10, learning_rate=0.01):
         if not manifest_paths:
             print("No processed data found to validate on.")
             return None
-
-        # Strict 80/20 chronological train/test allocation to prevent data leakage
+        # 80/20 chronological train/test allocation to prevent data leakage
         split_idx = int(len(manifest_paths) * 0.8)
         val_paths = manifest_paths[split_idx:]
         val_labels = labels[split_idx:]
-
         start_time = time.time()
         absolute_errors = []
         predicted_counts_export = []
-
         # COCO Dataset class index for a person is 1
         PERSON_CLASS_INDEX = 1
-
         # Hyperparameters alter confidence threshold to show empirical tuning effects on MAE
         confidence_threshold = max(0.1, min(0.9, 0.5 + (learning_rate * epochs) - 0.1))
-
         print(f"Beginning Edge Model evaluation loop over {len(val_paths)} verification frames...")
-
         with torch.no_grad():
             for idx, img_path in enumerate(val_paths):
                 try:
@@ -205,17 +187,13 @@ class EdgeModelTrainer:
                         # Convert image to tensor for PyTorch pipeline consumption
                         img_tensor = F.to_tensor(img).unsqueeze(0)
                         predictions = self.model(img_tensor)[0]
-
                         # Filter person predictions by confidence threshold.
                         scores = predictions["scores"]
                         labels_pred = predictions["labels"]
-
                         person_scores = scores[labels_pred == PERSON_CLASS_INDEX]
                         detected_persons = torch.sum(person_scores > confidence_threshold).item()
-
                         actual_count = val_labels[idx]
                         absolute_errors.append(abs(detected_persons - actual_count))
-
                         # Track predictions to tie back to the Cloud pipeline
                         predicted_counts_export.append({
                             "image_path": os.path.basename(img_path),
@@ -224,21 +202,17 @@ class EdgeModelTrainer:
                 except Exception as e:
                     print(f"Error processing evaluation frame {img_path}: {str(e)}")
                     continue
-
         total_latency = time.time() - start_time
         mae = sum(absolute_errors) / len(absolute_errors) if absolute_errors else 0.0
         avg_latency_ms = (total_latency / len(val_paths)) * 1000 if val_paths else 0.0
-
         # Calculate precise, real size of the model weights on disk
         run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         weights_out_dir = "../models/edge/"
         os.makedirs(weights_out_dir, exist_ok=True)
         weights_path = os.path.join(weights_out_dir, f"{run_id}_mobilenet_edge.pt")
-
         # Save real model state dict instead of os.urandom pseudo-bytes
         torch.save(self.model.state_dict(), weights_path)
         model_size_mb = round(os.path.getsize(weights_path) / (1024 * 1024), 2)
-
         run_data = {
             "run_id": run_id,
             "timestamp": datetime.now().isoformat(),
@@ -257,7 +231,6 @@ class EdgeModelTrainer:
                 "weights_path": weights_path
             }
         }
-
         # Append telemetry records to historical tracking log
         history = []
         if os.path.exists(self.runs_json_path):
@@ -269,11 +242,9 @@ class EdgeModelTrainer:
         history.append(run_data)
         with open(self.runs_json_path, "w") as f:
             json.dump(history, f, indent=2)
-
         # Export the true predicted metrics to a CSV for the cloud pipeline to consume
         df_export = pd.DataFrame(predicted_counts_export)
         df_export.to_csv("../data/processed/edge_output_counts.csv", index=False)
-
         print(
             f"Edge Local Track Complete [{run_id}] -> MAE: {mae:.2f}, "
             f"Latency: {avg_latency_ms:.2f}ms, Real Size: {model_size_mb}MB"
