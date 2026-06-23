@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-06-15T19:14:54.243545",
+  "row_count": 909500,
+  "sales_mean": 52.338291368884,
+  "sales_std": 28.806335348433766,
+  "sales_min": 0,
+  "sales_max": 231,
+  "customer_count_mean": 27.8587135788895
+}

@@ -1,0 +1,180 @@
+[
+  {
+    "run_id": "run_20260517_165047",
+    "timestamp": "2026-05-17T16:50:47.161040",
+    "hyperparameters": {
+      "epochs": 10,
+      "learning_rate": 0.01,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 25.46,
+      "inference_latency_ms": 24.92,
+      "model_size_mb": 11.86
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260517_165047_yolo_light.bin"
+    }
+  },
+  {
+    "run_id": "run_20260517_165057",
+    "timestamp": "2026-05-17T16:50:57.187832",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 17.25,
+      "inference_latency_ms": 25.01,
+      "model_size_mb": 11.57
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260517_165057_yolo_light.bin"
+    }
+  },
+  {
+    "run_id": "run_20260615_180752",
+    "timestamp": "2026-06-15T18:07:52.759125",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1750.0,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260615_180752_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260615_211012",
+    "timestamp": "2026-06-15T21:10:12.391854",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1714.89,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260615_211012_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_190827",
+    "timestamp": "2026-06-21T19:08:28.665704",
+    "hyperparameters": {
+      "epochs": 10,
+      "learning_rate": 0.01,
+      "confidence_threshold": 0.5,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 10.34,
+      "inference_latency_ms": 1563.63,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_190827_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_191648",
+    "timestamp": "2026-06-21T19:16:48.881670",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1250.14,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_191648_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_192905",
+    "timestamp": "2026-06-21T19:29:05.980038",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1241.49,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_192905_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_201429",
+    "timestamp": "2026-06-21T20:14:29.651469",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1256.38,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_201429_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_213543",
+    "timestamp": "2026-06-21T21:35:43.425547",
+    "hyperparameters": {
+      "epochs": 10,
+      "learning_rate": 0.01,
+      "confidence_threshold": 0.5,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 10.34,
+      "inference_latency_ms": 1688.72,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_213543_mobilenet_edge.pt"
+    }
+  },
+  {
+    "run_id": "run_20260621_214658",
+    "timestamp": "2026-06-21T21:46:58.438372",
+    "hyperparameters": {
+      "epochs": 25,
+      "learning_rate": 0.05,
+      "confidence_threshold": 0.9,
+      "image_resolution": "320x240"
+    },
+    "metrics": {
+      "MAE": 19.15,
+      "inference_latency_ms": 1686.97,
+      "model_size_mb": 159.79
+    },
+    "artifacts": {
+      "weights_path": "../models/edge/run_20260621_214658_mobilenet_edge.pt"
+    }
+  }
+]
